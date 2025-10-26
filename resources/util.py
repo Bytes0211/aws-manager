@@ -53,3 +53,15 @@ def get_ec2_client():
 def get_ec2_resource():
     """Get AWS EC2 resource."""
     return aws.resource('ec2')
+
+def get_dynamodb_client(local=False):
+    """Get AWS DynamoDB client."""
+    if local:
+        return aws.client('dynamodb', endpoint_url='http://localhost:8000')
+    return aws.client('dynamodb')
+
+def get_dynamodb_resource(local=False):
+    """Get AWS DynamoDB resource."""
+    if local:
+        return aws.resource('dynamodb', endpoint_url='http://localhost:8000')
+    return aws.resource('dynamodb')

@@ -7,16 +7,23 @@ from botocore.exceptions import ClientError
 from resources import util, lambdadeployer  # type: ignore
 
 class Aws:
-    """AWS service wrapper class for S3, IAM, and Lambda operations."""
+    """AWS service wrapper class for S3, IAM, Lambda, EC2, and DynamoDB operations."""
 
-    def __init__(self) -> None:
-        """Initialize AWS service clients lazily."""
+    def __init__(self, use_local_dynamodb: bool = False) -> None:
+        """Initialize AWS service clients lazily.
+        
+        Args:
+            use_local_dynamodb: If True, connects to DynamoDB at localhost:8000
+        """
         self._s3_client = None 
         self._s3_resource = None
         self._iam_client = None
         self._lambda_client = None
         self._ec2_client = None
         self._ec2_resource = None
+        self._dynamodb_client = None
+        self._dynamodb_resource = None
+        self._use_local_dynamodb = use_local_dynamodb
         
     # Properties for lazy initialization of AWS clients
     # lazy initialization Creational Design Pattern that delays the creation of a resource until it’s actually needed
@@ -93,6 +100,26 @@ class Aws:
     @ec2_resource.setter
     def ec2_resource(self, value):
         self._ec2_resource = value
+
+    @property
+    def dynamodb_client(self):
+        if self._dynamodb_client is None:
+            self._dynamodb_client = util.get_dynamodb_client(local=self._use_local_dynamodb)
+        return self._dynamodb_client
+    
+    @dynamodb_client.setter
+    def dynamodb_client(self, value):
+        self._dynamodb_client = value
+    
+    @property
+    def dynamodb_resource(self):
+        if self._dynamodb_resource is None:
+            self._dynamodb_resource = util.get_dynamodb_resource(local=self._use_local_dynamodb)
+        return self._dynamodb_resource
+    
+    @dynamodb_resource.setter
+    def dynamodb_resource(self, value):
+        self._dynamodb_resource = value
 
     def create_bucket_name(self, prefix: str = 'scotton') -> str:
         """Create unique bucket name with UUID suffix."""
@@ -330,4 +357,306 @@ class Aws:
         except ClientError as err:
             print(f"❌ Error terminating EC2 instance(s): {err.response['Error']['Code']} - {err.response['Error']['Message']}")
             raise
+
+    def create_dynamodb_table(self, table_name: str, key_schema: list, attribute_definitions: list, 
+                              provisioned_throughput: dict = None, billing_mode: str = 'PAY_PER_REQUEST', # type: ignore
+                              global_secondary_indexes: list = None, local_secondary_indexes: list = None, # type: ignore
+                              tags: list = None) -> tuple: # type: ignore
+        """Create DynamoDB table with specified configuration."""
+        try:
+            params = {
+                'TableName': table_name,
+                'KeySchema': key_schema,
+                'AttributeDefinitions': attribute_definitions,
+                'BillingMode': billing_mode
+            }
             
+            # Only add ProvisionedThroughput if billing mode is PROVISIONED
+            if billing_mode == 'PROVISIONED':
+                if provisioned_throughput:
+                    params['ProvisionedThroughput'] = provisioned_throughput
+                else:
+                    params['ProvisionedThroughput'] = {
+                        'ReadCapacityUnits': 5,
+                        'WriteCapacityUnits': 5
+                    }
+            
+            if global_secondary_indexes:
+                params['GlobalSecondaryIndexes'] = global_secondary_indexes
+            if local_secondary_indexes:
+                params['LocalSecondaryIndexes'] = local_secondary_indexes
+            if tags:
+                params['Tags'] = tags
+            
+            table = self.dynamodb_resource.create_table(**params) # type: ignore
+            table.wait_until_exists()
+            print(f"✅ DynamoDB table '{table_name}' created successfully")
+            return 200, table
+        except ClientError as err:
+            print(f"❌ Error creating DynamoDB table: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def put_item_dynamodb(self, table_name: str, item: dict) -> tuple:
+        """Insert or update item in DynamoDB table."""
+        try:
+            table = self.dynamodb_resource.Table(table_name) # type: ignore
+            response = table.put_item(Item=item)
+            print(f"✅ Item added to table '{table_name}' successfully")
+            return 200, response
+        except ClientError as err:
+            print(f"❌ Error putting item in DynamoDB: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def get_item_dynamodb(self, table_name: str, key: dict) -> dict:
+        """Retrieve item from DynamoDB table by key."""
+        try:
+            table = self.dynamodb_resource.Table(table_name) # type: ignore
+            response = table.get_item(Key=key)
+            
+            if 'Item' in response:
+                print(f"✅ Item retrieved from table '{table_name}' successfully")
+                return response['Item']
+            else:
+                print(f"⚠️  Item not found in table '{table_name}'")
+                return {}
+        except ClientError as err:
+            print(f"❌ Error getting item from DynamoDB: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def update_item_dynamodb(self, table_name: str, key: dict, update_expression: str, 
+                            expression_attribute_values: dict = None, # type: ignore
+                            expression_attribute_names: dict = None, # type: ignore
+                            return_values: str = 'ALL_NEW') -> tuple:
+        """Update item in DynamoDB table."""
+        try:
+            table = self.dynamodb_resource.Table(table_name) # type: ignore
+            params = {
+                'Key': key,
+                'UpdateExpression': update_expression,
+                'ReturnValues': return_values
+            }
+            
+            if expression_attribute_values:
+                params['ExpressionAttributeValues'] = expression_attribute_values
+            if expression_attribute_names:
+                params['ExpressionAttributeNames'] = expression_attribute_names
+            
+            response = table.update_item(**params)
+            print(f"✅ Item updated in table '{table_name}' successfully")
+            return 200, response
+        except ClientError as err:
+            print(f"❌ Error updating item in DynamoDB: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def delete_item_dynamodb(self, table_name: str, key: dict) -> tuple:
+        """Delete item from DynamoDB table."""
+        try:
+            table = self.dynamodb_resource.Table(table_name) # type: ignore
+            response = table.delete_item(Key=key)
+            print(f"✅ Item deleted from table '{table_name}' successfully")
+            return 200, response
+        except ClientError as err:
+            print(f"❌ Error deleting item from DynamoDB: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def query_dynamodb(self, table_name: str, key_condition_expression: str, 
+                       expression_attribute_values: dict = None, # type: ignore
+                       expression_attribute_names: dict = None, # type: ignore
+                       filter_expression: str = None, # type: ignore
+                       index_name: str = None) -> list: # type: ignore
+        """Query DynamoDB table with key condition."""
+        try:
+            table = self.dynamodb_resource.Table(table_name) # type: ignore
+            params = {'KeyConditionExpression': key_condition_expression}
+            
+            if expression_attribute_values:
+                params['ExpressionAttributeValues'] = expression_attribute_values # type: ignore
+            if expression_attribute_names:
+                params['ExpressionAttributeNames'] = expression_attribute_names # type: ignore
+            if filter_expression:
+                params['FilterExpression'] = filter_expression
+            if index_name:
+                params['IndexName'] = index_name
+            
+            response = table.query(**params)
+            items = response.get('Items', [])
+            print(f"✅ Query returned {len(items)} item(s) from table '{table_name}'")
+            return items
+        except ClientError as err:
+            print(f"❌ Error querying DynamoDB: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def scan_dynamodb(self, table_name: str, filter_expression: str = None, # type: ignore
+                     expression_attribute_values: dict = None, # type: ignore
+                     expression_attribute_names: dict = None) -> list: # type: ignore
+        """Scan DynamoDB table (reads all items)."""
+        try:
+            table = self.dynamodb_resource.Table(table_name) # type: ignore
+            params = {}
+            
+            if filter_expression:
+                params['FilterExpression'] = filter_expression
+            if expression_attribute_values:
+                params['ExpressionAttributeValues'] = expression_attribute_values
+            if expression_attribute_names:
+                params['ExpressionAttributeNames'] = expression_attribute_names
+            
+            response = table.scan(**params)
+            items = response.get('Items', [])
+            
+            # Handle pagination for large tables
+            while 'LastEvaluatedKey' in response:
+                params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                response = table.scan(**params)
+                items.extend(response.get('Items', []))
+            
+            print(f"✅ Scan returned {len(items)} item(s) from table '{table_name}'")
+            return items
+        except ClientError as err:
+            print(f"❌ Error scanning DynamoDB: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def batch_write_dynamodb(self, table_name: str, items: list) -> tuple:
+        """Batch write items to DynamoDB table (up to 25 items per batch)."""
+        if not isinstance(items, list):
+            return 400, f'❌ {items} IS NOT A LIST'
+        
+        try:
+            table = self.dynamodb_resource.Table(table_name) # type: ignore
+            
+            # DynamoDB batch_write supports max 25 items per batch
+            batch_size = 25
+            for i in range(0, len(items), batch_size):
+                batch = items[i:i + batch_size]
+                with table.batch_writer() as writer:
+                    for item in batch:
+                        writer.put_item(Item=item)
+            
+            print(f"✅ Batch write completed: {len(items)} item(s) added to table '{table_name}'")
+            return 200, f'✅ {len(items)} ITEMS ADDED TO {table_name}'
+        except ClientError as err:
+            print(f"❌ Error batch writing to DynamoDB: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def list_dynamodb_tables(self) -> None:
+        """List all DynamoDB tables in account."""
+        try:
+            response = self.dynamodb_client.list_tables()
+            table_names = response.get('TableNames', [])
+            
+            if table_names:
+                print(f"📋 DynamoDB Tables in account [{len(table_names)}]:\n")
+                for table_name in table_names:
+                    # Get additional table details
+                    table_info = self.dynamodb_client.describe_table(TableName=table_name)
+                    table = table_info['Table']
+                    print(f" - {table_name}")
+                    print(f"   Status: {table['TableStatus']}")
+                    print(f"   Item Count: {table.get('ItemCount', 0)}")
+                    print(f"   Size: {table.get('TableSizeBytes', 0)} bytes")
+                    print(f"   Billing Mode: {table.get('BillingModeSummary', {}).get('BillingMode', 'PROVISIONED')}")
+                    print()
+            else:
+                print("📋 No DynamoDB tables found in account.")
+        except ClientError as err:
+            print(f"❌ Error listing DynamoDB tables: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def delete_dynamodb_table(self, table_name: str) -> tuple:
+        """Delete DynamoDB table."""
+        try:
+            table = self.dynamodb_resource.Table(table_name) # type: ignore
+            table.delete()
+            table.wait_until_not_exists()
+            print(f"✅ DynamoDB table '{table_name}' deleted successfully")
+            return 200, f'✅ TABLE {table_name} DELETED'
+        except ClientError as err:
+            print(f"❌ Error deleting DynamoDB table: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def get_table_schema(self, table_name: str) -> dict:
+        """Get table schema information (key schema and attribute definitions)."""
+        try:
+            response = self.dynamodb_client.describe_table(TableName=table_name)
+            table = response['Table']
+            
+            schema = {
+                'table_name': table_name,
+                'key_schema': table['KeySchema'],
+                'attribute_definitions': table['AttributeDefinitions'],
+                'billing_mode': table.get('BillingModeSummary', {}).get('BillingMode', 'PROVISIONED')
+            }
+            
+            # Include provisioned throughput if applicable
+            if 'ProvisionedThroughput' in table:
+                schema['provisioned_throughput'] = {
+                    'ReadCapacityUnits': table['ProvisionedThroughput']['ReadCapacityUnits'],
+                    'WriteCapacityUnits': table['ProvisionedThroughput']['WriteCapacityUnits']
+                }
+            
+            # Include GSI if present
+            if 'GlobalSecondaryIndexes' in table:
+                schema['global_secondary_indexes'] = table['GlobalSecondaryIndexes']
+            
+            # Include LSI if present
+            if 'LocalSecondaryIndexes' in table:
+                schema['local_secondary_indexes'] = table['LocalSecondaryIndexes']
+            
+            print(f"✅ Retrieved schema for table '{table_name}'")
+            return schema
+        except ClientError as err:
+            print(f"❌ Error getting table schema: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+    
+    def copy_table_to_aws(self, source_table_name: str, destination_table_name: str = None) -> tuple: # type: ignore
+        """Copy a table from local DynamoDB to AWS DynamoDB.
+        
+        Args:
+            source_table_name: Name of the source table (from local DynamoDB)
+            destination_table_name: Name for the destination table (defaults to source name)
+        
+        Returns:
+            Tuple of (status_code, message)
+        """
+        if destination_table_name is None:
+            destination_table_name = source_table_name
+        
+        try:
+            # Get source table schema from local DynamoDB
+            local_aws = Aws(use_local_dynamodb=True)
+            schema = local_aws.get_table_schema(source_table_name)
+            
+            print(f"🔄 Starting migration of '{source_table_name}' to AWS as '{destination_table_name}'...")
+            
+            # Create table on AWS
+            print(f"🛠️  Creating table '{destination_table_name}' on AWS...")
+            create_params = {
+                'table_name': destination_table_name,
+                'key_schema': schema['key_schema'],
+                'attribute_definitions': schema['attribute_definitions'],
+                'billing_mode': 'PAY_PER_REQUEST'  # Use on-demand for migration
+            }
+            
+            self.create_dynamodb_table(**create_params)
+            
+            # Scan all items from local table
+            print(f"📊 Scanning items from local table '{source_table_name}'...")
+            items = local_aws.scan_dynamodb(source_table_name)
+            
+            if not items:
+                print(f"⚠️  No items to migrate from '{source_table_name}'")
+                return 200, f'✅ TABLE {destination_table_name} CREATED (0 items migrated)'
+            
+            # Batch write items to AWS table
+            print(f"🚀 Migrating {len(items)} item(s) to AWS...")
+            self.batch_write_dynamodb(destination_table_name, items)
+            
+            print(f"✅ Migration complete: {len(items)} item(s) copied to '{destination_table_name}' on AWS")
+            return 200, f'✅ TABLE {destination_table_name} CREATED AND {len(items)} ITEMS MIGRATED'
+            
+        except ClientError as err:
+            print(f"❌ Error copying table to AWS: {err.response['Error']['Code']} - {err.response['Error']['Message']}")
+            raise
+        except Exception as e:
+            print(f"❌ Error during migration: {str(e)}")
+            raise

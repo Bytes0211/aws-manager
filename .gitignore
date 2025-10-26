@@ -1,4 +1,6 @@
 .env
-__pycachee__/
+__pycache__/
 .awsVenv/
+*.pyc
+
 

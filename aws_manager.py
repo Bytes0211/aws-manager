@@ -15,7 +15,7 @@ AWSManager.list_functions()
 """
 
 class AWSManager:
-    """Manager class with static methods for AWS Lambda operations."""
+    """Manager class with static methods for AWS operations (Lambda, S3, EC2, DynamoDB)."""
 
     @staticmethod
     def invoke_function(function_name: str, function_params: dict, get_log: bool = False) -> dict:
@@ -247,6 +247,296 @@ class AWSManager:
         """
         aws = Aws()
         return aws.remove_ec2s(instance_ids)
+
+    # DynamoDB Operations
+    @staticmethod
+    def create_dynamodb_table(table_name: str, key_schema: list, attribute_definitions: list,
+                             provisioned_throughput: dict = None, billing_mode: str = 'PAY_PER_REQUEST', # type: ignore
+                             global_secondary_indexes: list = None, local_secondary_indexes: list = None, # type: ignore
+                             tags: list = None) -> tuple: # type: ignore
+        """
+        Create DynamoDB table with specified configuration.
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            key_schema: List defining partition key and sort key
+            attribute_definitions: List of attribute definitions
+            provisioned_throughput: Dict with ReadCapacityUnits and WriteCapacityUnits (only for PROVISIONED mode)
+            billing_mode: 'PAY_PER_REQUEST' or 'PROVISIONED' (default: 'PAY_PER_REQUEST')
+            global_secondary_indexes: List of global secondary indexes
+            local_secondary_indexes: List of local secondary indexes
+            tags: List of tags to apply to the table
+            
+        Returns:
+            Tuple of (status_code, table)
+        """
+        aws = Aws()
+        return aws.create_dynamodb_table(table_name, key_schema, attribute_definitions,
+                                        provisioned_throughput, billing_mode,
+                                        global_secondary_indexes, local_secondary_indexes, tags)
+
+    @staticmethod
+    def put_item_dynamodb(table_name: str, item: dict) -> tuple:
+        """
+        Insert or update item in DynamoDB table.
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            item: Dictionary representing the item to insert/update
+            
+        Returns:
+            Tuple of (status_code, response)
+        """
+        aws = Aws()
+        return aws.put_item_dynamodb(table_name, item)
+
+    @staticmethod
+    def get_item_dynamodb(table_name: str, key: dict) -> dict:
+        """
+        Retrieve item from DynamoDB table by key.
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            key: Dictionary representing the primary key of the item
+            
+        Returns:
+            Dictionary containing the item, or empty dict if not found
+        """
+        aws = Aws()
+        return aws.get_item_dynamodb(table_name, key)
+
+    @staticmethod
+    def update_item_dynamodb(table_name: str, key: dict, update_expression: str,
+                            expression_attribute_values: dict = None, # type: ignore
+                            expression_attribute_names: dict = None, # type: ignore
+                            return_values: str = 'ALL_NEW') -> tuple:
+        """
+        Update item in DynamoDB table.
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            key: Dictionary representing the primary key of the item
+            update_expression: Expression defining the update (e.g., 'SET #n = :val')
+            expression_attribute_values: Dictionary mapping expression values
+            expression_attribute_names: Dictionary mapping expression attribute names
+            return_values: What to return after update (default: 'ALL_NEW')
+            
+        Returns:
+            Tuple of (status_code, response)
+        """
+        aws = Aws()
+        return aws.update_item_dynamodb(table_name, key, update_expression,
+                                       expression_attribute_values,
+                                       expression_attribute_names, return_values)
+
+    @staticmethod
+    def delete_item_dynamodb(table_name: str, key: dict) -> tuple:
+        """
+        Delete item from DynamoDB table.
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            key: Dictionary representing the primary key of the item
+            
+        Returns:
+            Tuple of (status_code, response)
+        """
+        aws = Aws()
+        return aws.delete_item_dynamodb(table_name, key)
+
+    @staticmethod
+    def query_dynamodb(table_name: str, key_condition_expression: str,
+                      expression_attribute_values: dict = None, # type: ignore
+                      expression_attribute_names: dict = None, # type: ignore
+                      filter_expression: str = None, # type: ignore
+                      index_name: str = None) -> list: # type: ignore
+        """
+        Query DynamoDB table with key condition.
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            key_condition_expression: Key condition for the query
+            expression_attribute_values: Dictionary mapping expression values
+            expression_attribute_names: Dictionary mapping expression attribute names
+            filter_expression: Optional filter expression
+            index_name: Optional index name to query against
+            
+        Returns:
+            List of items matching the query
+        """
+        aws = Aws()
+        return aws.query_dynamodb(table_name, key_condition_expression,
+                                 expression_attribute_values,
+                                 expression_attribute_names,
+                                 filter_expression, index_name)
+
+    @staticmethod
+    def scan_dynamodb(table_name: str, filter_expression: str = None, # type: ignore
+                     expression_attribute_values: dict = None, # type: ignore
+                     expression_attribute_names: dict = None) -> list: # type: ignore
+        """
+        Scan DynamoDB table (reads all items).
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            filter_expression: Optional filter expression
+            expression_attribute_values: Dictionary mapping expression values
+            expression_attribute_names: Dictionary mapping expression attribute names
+            
+        Returns:
+            List of all items in the table (with pagination handling)
+        """
+        aws = Aws()
+        return aws.scan_dynamodb(table_name, filter_expression,
+                                expression_attribute_values,
+                                expression_attribute_names)
+
+    @staticmethod
+    def batch_write_dynamodb(table_name: str, items: list) -> tuple:
+        """
+        Batch write items to DynamoDB table (up to 25 items per batch).
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            items: List of items to insert (automatically batched in groups of 25)
+            
+        Returns:
+            Tuple of (status_code, message)
+        """
+        aws = Aws()
+        return aws.batch_write_dynamodb(table_name, items)
+
+    @staticmethod
+    def list_dynamodb_tables() -> None:
+        """
+        List all DynamoDB tables in account.
+        Prints table details including status, item count, size, and billing mode.
+        """
+        aws = Aws()
+        aws.list_dynamodb_tables()
+
+    @staticmethod
+    def delete_dynamodb_table(table_name: str) -> tuple:
+        """
+        Delete DynamoDB table.
+        
+        Args:
+            table_name: Name of the DynamoDB table to delete
+            
+        Returns:
+            Tuple of (status_code, message)
+        """
+        aws = Aws()
+        return aws.delete_dynamodb_table(table_name)
+
+    # Local DynamoDB Operations
+    @staticmethod
+    def scan_dynamodb_local(table_name: str, filter_expression: str = None, # type: ignore
+                           expression_attribute_values: dict = None, # type: ignore
+                           expression_attribute_names: dict = None) -> list: # type: ignore
+        """
+        Scan DynamoDB table on localhost:8000 (reads all items).
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            filter_expression: Optional filter expression
+            expression_attribute_values: Dictionary mapping expression values
+            expression_attribute_names: Dictionary mapping expression attribute names
+            
+        Returns:
+            List of all items in the table (with automatic pagination handling)
+        """
+        aws = Aws(use_local_dynamodb=True)
+        return aws.scan_dynamodb(table_name, filter_expression,
+                                expression_attribute_values,
+                                expression_attribute_names)
+
+    @staticmethod
+    def list_dynamodb_tables_local() -> None:
+        """
+        List all DynamoDB tables on localhost:8000.
+        Prints table details including status, item count, size, and billing mode.
+        """
+        aws = Aws(use_local_dynamodb=True)
+        aws.list_dynamodb_tables()
+
+    @staticmethod
+    def get_item_dynamodb_local(table_name: str, key: dict) -> dict:
+        """
+        Retrieve item from DynamoDB table on localhost:8000 by key.
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            key: Dictionary representing the primary key of the item
+            
+        Returns:
+            Dictionary containing the item, or empty dict if not found
+        """
+        aws = Aws(use_local_dynamodb=True)
+        return aws.get_item_dynamodb(table_name, key)
+
+    @staticmethod
+    def query_dynamodb_local(table_name: str, key_condition_expression: str,
+                            expression_attribute_values: dict = None, # type: ignore
+                            expression_attribute_names: dict = None, # type: ignore
+                            filter_expression: str = None, # type: ignore
+                            index_name: str = None) -> list: # type: ignore
+        """
+        Query DynamoDB table on localhost:8000 with key condition.
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            key_condition_expression: Key condition for the query
+            expression_attribute_values: Dictionary mapping expression values
+            expression_attribute_names: Dictionary mapping expression attribute names
+            filter_expression: Optional filter expression
+            index_name: Optional index name to query against
+            
+        Returns:
+            List of items matching the query
+        """
+        aws = Aws(use_local_dynamodb=True)
+        return aws.query_dynamodb(table_name, key_condition_expression,
+                                 expression_attribute_values,
+                                 expression_attribute_names,
+                                 filter_expression, index_name)
+
+    # DynamoDB Migration Operations
+    @staticmethod
+    def get_table_schema(table_name: str, use_local: bool = False) -> dict:
+        """
+        Get table schema information (key schema and attribute definitions).
+        
+        Args:
+            table_name: Name of the DynamoDB table
+            use_local: If True, gets schema from localhost:8000
+            
+        Returns:
+            Dictionary containing table schema information
+        """
+        aws = Aws(use_local_dynamodb=use_local)
+        return aws.get_table_schema(table_name)
+
+    @staticmethod
+    def copy_table_to_aws(source_table_name: str, destination_table_name: str = None) -> tuple: # type: ignore
+        """
+        Copy a table from local DynamoDB to AWS DynamoDB.
+        
+        This will:
+        1. Read the table schema from local DynamoDB
+        2. Create a new table on AWS with the same schema
+        3. Scan all items from the local table
+        4. Batch write all items to the AWS table
+        
+        Args:
+            source_table_name: Name of the source table (from local DynamoDB)
+            destination_table_name: Name for the destination table on AWS (defaults to source name)
+            
+        Returns:
+            Tuple of (status_code, message)
+        """
+        aws = Aws(use_local_dynamodb=False)  # Deploy to AWS
+        return aws.copy_table_to_aws(source_table_name, destination_table_name)
 
 
 
